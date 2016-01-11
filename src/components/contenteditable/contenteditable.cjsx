@@ -9,6 +9,7 @@ EditorAPI = require './editor-api'
 ExtendedSelection = require './extended-selection'
 
 TabManager = require './tab-manager'
+LinkManager = require './link-manager'
 ListManager = require './list-manager'
 MouseService = require './mouse-service'
 DOMNormalizer = require './dom-normalizer'
@@ -63,12 +64,16 @@ class Contenteditable extends React.Component
 
   coreServices: [MouseService, ClipboardService]
 
-  coreExtensions: [DOMNormalizer, ListManager, TabManager, BlockquoteManager]
-
-
+  coreExtensions: [
+    DOMNormalizer
+    ListManager
+    TabManager
+    LinkManager
+    BlockquoteManager
+  ]
   ########################################################################
-  ########################### Public Methods #############################
-  ########################################################################
+########################### Public Methods #############################
+########################################################################
 
   ### Public: perform an editing operation on the Contenteditable
 
@@ -99,8 +104,8 @@ class Contenteditable extends React.Component
 
 
   ########################################################################
-  ########################### React Lifecycle ############################
-  ########################################################################
+########################### React Lifecycle ############################
+########################################################################
 
   constructor: (@props) ->
     @innerState = {}
@@ -158,8 +163,8 @@ class Contenteditable extends React.Component
 
 
   ########################################################################
-  ############################### Render #################################
-  ########################################################################
+############################### Render #################################
+########################################################################
 
   render: =>
     <KeyCommandsRegion className="contenteditable-container"
@@ -184,8 +189,8 @@ class Contenteditable extends React.Component
 
 
   ########################################################################
-  ############################ Listener Setup ############################
-  ########################################################################
+############################ Listener Setup ############################
+########################################################################
 
   _eventHandlers: =>
     handlers = {}
@@ -198,12 +203,26 @@ class Contenteditable extends React.Component
       onCompositionStart: @_onCompositionStart
     return handlers
 
+  # This extracts extensions keymap handlers and binds them to be called
+  # through `atomicEdit`. This exposes the `{editor, event}` props to any
+  # keyCommandHandlers callbacks.
+  _boundExtensionKeymapHandlers: ->
+    extensionHandlers = {}
+    for extension in @props.extensions.concat(@coreExtensions)
+      continue unless _.isFunction(extension.keyCommandHandlers)
+      extensionHandlers = extension.keyCommandHandlers.call(extension)
+      for command, handler of extensionHandlers
+        extensionHandlers[command] = (event) =>
+          @atomicEdit(handler, {event})
+    return extensionHandlers
+
   _keymapHandlers: ->
     atomicEditWrap = (command) =>
       (event) =>
-        @atomicEdit((({editor}) -> editor[command]()), event)
+        handler = ({editor}) -> editor[command]()
+        @atomicEdit(hander, {event})
 
-    keymapHandlers = {
+    keymapHandlers = _.extend {}, @_boundExtensionKeymapHandlers(), {
       'contenteditable:bold': atomicEditWrap("bold")
       'contenteditable:italic': atomicEditWrap("italic")
       'contenteditable:indent': atomicEditWrap("indent")
@@ -234,8 +253,8 @@ class Contenteditable extends React.Component
 
 
   ########################################################################
-  ############################ Event Handlers ############################
-  ########################################################################
+############################ Event Handlers ############################
+########################################################################
 
   # Every time the contents of the contenteditable DOM node change, the
   # `_onDOMMutated` event gets fired.
@@ -318,8 +337,8 @@ class Contenteditable extends React.Component
 
 
   ########################################################################
-  ############################# Extensions ###############################
-  ########################################################################
+############################# Extensions ###############################
+########################################################################
 
   _runCallbackOnExtensions: (method, argsObj={}) =>
     for extension in @props.extensions.concat(@coreExtensions)
@@ -353,8 +372,8 @@ class Contenteditable extends React.Component
 
 
   ########################################################################
-  ############################## Selection ###############################
-  ########################################################################
+############################## Selection ###############################
+########################################################################
   # Saving and restoring a selection is difficult with React.
   #
   # React only handles Input and Textarea elements:
