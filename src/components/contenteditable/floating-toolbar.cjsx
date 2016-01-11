@@ -40,10 +40,6 @@ class FloatingToolbar extends React.Component
     # config objects.
     buttonConfigs: React.PropTypes.array
 
-    # Notifies our parent of when we focus in and out of inputs in the
-    # toolbar.
-    onChangeFocus: React.PropTypes.func
-
     # The absolute available area we have used in calculating our
     # appropriate position.
     editAreaWidth: React.PropTypes.number
@@ -79,9 +75,6 @@ class FloatingToolbar extends React.Component
 
   componentDidUpdate: =>
     if @props.mode is "edit-link" and not @props.linkToModify
-      # Note, it's important that we're focused on the urlInput because
-      # the parent of this component needs to know to not hide us on their
-      # onBlur method.
       React.findDOMNode(@refs.urlInput).focus()
 
   render: =>
@@ -140,7 +133,6 @@ class FloatingToolbar extends React.Component
              ref="urlInput"
              value={@state.urlInputValue}
              onBlur={@_onBlur}
-             onFocus={@_onFocus}
              onClick={@_onPreventToolbarClose}
              onKeyPress={@_saveUrlOnEnter}
              onChange={@_onInputChange}
@@ -184,9 +176,6 @@ class FloatingToolbar extends React.Component
     @props.onSaveUrl "", @props.linkToModify
     @props.onDoneWithLink()
 
-  _onFocus: =>
-    @props.onChangeFocus(true)
-
   # Clicking the save or remove buttons will take precendent over simply
   # bluring the field.
   _onBlur: (event) =>
@@ -201,7 +190,6 @@ class FloatingToolbar extends React.Component
       return
     else
       @_saveUrl()
-      @props.onChangeFocus(false)
 
   _saveUrl: =>
     if (@state.urlInputValue ? "").trim().length > 0

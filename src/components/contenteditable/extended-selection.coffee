@@ -35,6 +35,7 @@ class ExtendedSelection
       @selectFromToWithIndex(args...)
     else if args.length >= 5
       throw @_errBadUsage()
+    return @
 
   selectAt: (at) ->
     nodeAt = @findNodeAt(at)

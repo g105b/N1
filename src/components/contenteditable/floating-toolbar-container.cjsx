@@ -35,13 +35,11 @@ class FloatingToolbarContainer extends React.Component
       editAreaWidth: 9999 # This will get set on first exportedSelection
       toolbarVisible: false
       linkHoveringOver: null
-    @_setToolbarState = _.debounce(@_setToolbarState, 10)
     @innerProps =
       links: []
       dragging: false
       doubleDown: false
       editableNode: null
-      toolbarFocus: false
       editableFocused: null
       exportedSelection: null
 
@@ -56,16 +54,18 @@ class FloatingToolbarContainer extends React.Component
   #
   # We call these performance-optimized props & state innerProps and
   # innerState.
-  componentWillReceiveInnerProps: (nextInnerProps) =>
-    @innerProps = _.extend @innerProps, nextInnerProps
-    @fullProps = _.extend(@innerProps, @props)
+  componentWillReceiveInnerProps: (nextInnerProps={}) =>
     if "links" of nextInnerProps
-      @_refreshLinkHoverListeners()
-    @_setToolbarState()
+      @_refreshLinkHoverListeners(nextInnerProps["links"])
+
+    fullProps = _.extend(@props, nextInnerProps)
+    @setState(@_getStateFromProps(fullProps))
+
+    @innerProps = _.extend @innerProps, nextInnerProps
 
   componentWillReceiveProps: (nextProps) =>
-    @fullProps = _.extend(@innerProps, nextProps)
-    @_setToolbarState()
+    fullProps = _.extend(@innerProps, nextProps)
+    @setState(@_getStateFromProps(fullProps))
 
   # The context menu, when activated, needs to make sure that the toolbar
   # is closed. Unfortunately, since there's no onClose callback for the
@@ -88,7 +88,6 @@ class FloatingToolbarContainer extends React.Component
       onMouseLeave={@_onLeaveToolbar}
       linkToModify={@state.linkToModify}
       buttonConfigs={@_toolbarButtonConfigs()}
-      onChangeFocus={@_onChangeFocus}
       editAreaWidth={@state.editAreaWidth}
       contentPadding={@CONTENT_PADDING}
       onDoneWithLink={@_onDoneWithLink} />
@@ -163,70 +162,107 @@ class FloatingToolbarContainer extends React.Component
       toolbarVisible: false
     return
 
-  # We explicitly control the focus of the FloatingToolbar because we can
-  # do things like switch from "buttons" mode to "edit-link" mode (which
-  # natively fires focus change events) but not want to signify a "focus"
-  # change
-  _onChangeFocus: (focus) =>
-    @componentWillReceiveInnerProps toolbarFocus: focus
-
   # We want the toolbar's state to be declaratively defined from other
   # states.
-  _setToolbarState: =>
-    props = @fullProps ? {}
+  _getStateFromProps: (props = (_.extend({}, @props, @innerProps))) =>
+    return {} if @_mouseInUse(props)
 
-    return if props.dragging or (props.doubleDown and not @state.toolbarVisible)
+    newState = {
+      toolbarMode: @_toolbarMode(props)
+      linkToModify: props.linkHoveringOver
+      toolbarVisible: @_toolbarVisible(props)
+    }
 
-    if props.toolbarFocus
-      @setState toolbarVisible: true
-      return
+    if newState.toolbarVisible
+      _.extend(newState, @_getPositionData(props))
 
-    if @_shouldHideToolbar(props)
-      @setState
-        toolbarVisible: false
-        toolbarMode: "buttons"
-      return
+    return newState
 
-    if props.linkHoveringOver
-      url = props.linkHoveringOver.getAttribute('href')
-      rect = props.linkHoveringOver.getBoundingClientRect()
-      [left, top, editAreaWidth, toolbarPos] = @_getToolbarPos(rect)
-      @setState
-        toolbarVisible: true
-        toolbarMode: "edit-link"
-        toolbarTop: top
-        toolbarLeft: left
-        toolbarPos: toolbarPos
-        linkToModify: props.linkHoveringOver
-        editAreaWidth: editAreaWidth
+    # return if props.dragging or (props.doubleDown and not @state.toolbarVisible)
+    # if props.toolbarFocus
+    #   @setState toolbarVisible: true
+    #   return
+
+    # if @_shouldHideToolbar(props)
+    #   @setState
+    #     toolbarVisible: false
+    #     toolbarMode: "buttons"
+    #   return
+
+    # if props.linkHoveringOver
+    #   url = props.linkHoveringOver.getAttribute('href')
+    #   rect = props.linkHoveringOver.getBoundingClientRect()
+    #   [left, top, editAreaWidth, toolbarPos] = @_getToolbarPos(rect)
+    #   @setState
+    #     toolbarVisible: true
+    #     toolbarMode: "edit-link"
+    #     toolbarTop: top
+    #     toolbarLeft: left
+    #     toolbarPos: toolbarPos
+    #     linkToModify: props.linkHoveringOver
+    #     editAreaWidth: editAreaWidth
+    # else
+    #   # return if @state.toolbarMode is "edit-link"
+    #   rect = DOMUtils.getRangeInScope(props.editableNode)?.getBoundingClientRect()
+    #   if not rect or DOMUtils.isEmptyBoundingRect(rect)
+    #     @setState
+    #       toolbarVisible: false
+    #       toolbarMode: "buttons"
+    #   else
+    #     [left, top, editAreaWidth, toolbarPos] = @_getToolbarPos(rect)
+    #     @setState
+    #       toolbarVisible: true
+    #       toolbarTop: top
+    #       toolbarLeft: left
+    #       toolbarPos: toolbarPos
+    #       linkToModify: null
+    #       editAreaWidth: editAreaWidth
+
+  # _shouldHideToolbar: (props) ->
+  #   return false if @state.toolbarMode is "edit-link"
+  #   return false if props.linkHoveringOver
+  #   return not props.editableFocused or
+  #          not props.exportedSelection or
+  #          props.exportedSelection.isCollapsed
+
+  _toolbarVisible: (props) ->
+    if @_focusedInToolbar()
+      return true
     else
-      # return if @state.toolbarMode is "edit-link"
-      rect = DOMUtils.getRangeInScope(props.editableNode)?.getBoundingClientRect()
-      if not rect or DOMUtils.isEmptyBoundingRect(rect)
-        @setState
-          toolbarVisible: false
-          toolbarMode: "buttons"
+      if props.exportedSelection.isCollapsed
+        return @_isInteractingWithLink(props)
       else
-        [left, top, editAreaWidth, toolbarPos] = @_getToolbarPos(rect)
-        @setState
-          toolbarVisible: true
-          toolbarTop: top
-          toolbarLeft: left
-          toolbarPos: toolbarPos
-          linkToModify: null
-          editAreaWidth: editAreaWidth
+        return true
 
-  _shouldHideToolbar: (props) ->
-    return false if @state.toolbarMode is "edit-link"
-    return false if props.linkHoveringOver
-    return not props.editableFocused or
-           not props.exportedSelection or
-           props.exportedSelection.isCollapsed
+  _isInteractingWithLink: (props) ->
+    return props.linkHoveringOver or @_isSelectingLink(props)
 
-  _refreshLinkHoverListeners: ->
+  _toolbarMode: (props) ->
+    if @_isInteractingWithLink(props) then "edit-link" else "buttons"
+
+  _isSelectingLink: (props) ->
+    anode = props.exportedSelection.anchorNode
+    fnode = props.exportedSelection.focusNode
+
+    testForATag = ->
+      DOMUtils.closest(anode, 'a') and DOMUtils.closest(fnode, 'a')
+
+    testForCustomTag = ->
+      tag = "n1-prompt-link"
+      DOMUtils.closest(anode, tag) and DOMUtils.closest(fnode, tag)
+
+    return testForATag() or testForCustomTag()
+
+  _focusedInToolbar: =>
+    React.findDOMNode(@)?.contains(document.activeElement)
+
+  _mouseInUse: ->
+    props.dragging or (props.doubleDown and not @state.toolbarVisible)
+
+  _refreshLinkHoverListeners: (newLinks = @innerProps.links) ->
     @_teardownLinkHoverListeners()
     @_links = {}
-    links = Array.prototype.slice.call(@innerProps.links)
+    links = Array.prototype.slice.call(newLinks)
     links.forEach (link) =>
       link.hoverId = Utils.generateTempId()
       @_links[link.hoverId] = {}
@@ -301,14 +337,22 @@ class FloatingToolbarContainer extends React.Component
 
   CONTENT_PADDING: 15
 
-  _getToolbarPos: (referenceRect) =>
-    return [0,0,0,0] unless @innerProps.editableNode
+  _getPositionData: (props) =>
+    editableNode = props.editableNode
+
+    if props.linkHoveringOver
+      referenceRect = props.linkHoveringOver.getBoundingClientRect()
+    else
+      referenceRect = DOMUtils.getRangeInScope(editableNode)?.getBoundingClientRect()
+
+    if not editableNode or not referenceRect or DOMUtils.isEmptyBoundingRect(referenceRect)
+      return {toolbarTop: 0, toolbarLeft: 0, editAreaWidth: 0, toolbarPos: 'above'}
 
     TOP_PADDING = 10
 
     BORDER_RADIUS_PADDING = 15
 
-    editArea = @innerProps.editableNode.getBoundingClientRect()
+    editArea = editableNode.getBoundingClientRect()
 
     calcLeft = (referenceRect.left - editArea.left) + referenceRect.width/2
     calcLeft = Math.min(Math.max(calcLeft, @CONTENT_PADDING+BORDER_RADIUS_PADDING), editArea.width - BORDER_RADIUS_PADDING)
@@ -319,9 +363,11 @@ class FloatingToolbarContainer extends React.Component
       calcTop = referenceRect.top - editArea.top + referenceRect.height + TOP_PADDING + 4
       toolbarPos = "below"
 
-    return [calcLeft, calcTop, editArea.width, toolbarPos]
-
-  _focusedOnToolbar: =>
-    React.findDOMNode(@refs.floatingToolbar)?.contains(document.activeElement)
+    return {
+      toolbarTop: calcTop
+      toolbarLeft: calcLeft
+      editAreaWidth: editArea.width
+      toolbarPos: toolbarPos
+    }
 
 module.exports = FloatingToolbarContainer

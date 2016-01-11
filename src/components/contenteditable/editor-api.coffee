@@ -40,17 +40,26 @@ class EditorAPI
     fn()
     @select(sel)
 
-  getSelectionTextIndex: (args...) -> @_extendedSelection.getSelectionTextIndex(args...)
+  getSelectionTextIndex: (args...) ->
+    @_extendedSelection.getSelectionTextIndex(args...)
 
+  importSelection: (args...) ->
+    @_extendedSelection.importSelection(args...); @
 
-  collapse: (args...) -> @_extendedSelection.collapse(args...); @
-  collapseToStart: (args...) -> @_extendedSelection.collapseToStart(args...); @
-  collapseToEnd: (args...) -> @_extendedSelection.collapseToEnd(args...); @
-  importSelection: (args...) -> @_extendedSelection.importSelection(args...); @
-  select: (args...) -> @_extendedSelection.select(args...); @
-  selectAllChildren: (args...) -> @_extendedSelection.selectAllChildren(args...); @
-  restoreSelectionByTextIndex: (args...) -> @_extendedSelection.restoreSelectionByTextIndex(args...); @
+  select: (args...) ->
+    @_extendedSelection.select(args...); @
 
+  selectAllChildren: (args...) ->
+    @_extendedSelection.selectAllChildren(args...); @
+
+  restoreSelectionByTextIndex: (args...) ->
+    @_extendedSelection.restoreSelectionByTextIndex(args...); @
+
+  normalize: -> @rootNode.normalize(); @
+
+  ########################################################################
+  ####################### execCommand Delegation #########################
+  ########################################################################
   backColor: (color) -> @_ec("backColor", false, color)
   bold: -> @_ec("bold", false)
   copy: -> @_ec("copy", false)
@@ -68,7 +77,17 @@ class EditorAPI
   increaseFontSize: -> @_ec("increaseFontSize", false)
   indent: -> @_ec("indent", false)
   insertHorizontalRule: -> @_ec("insertHorizontalRule", false)
-  insertHTML: (html) -> @_ec("insertHTML", false, html)
+
+  insertHTML: (html, {selectInsertion}) ->
+    if selectInsertion
+      wrappedHtml = "<span id='tmp-html-insertion-wrap'>#{html}</span>"
+      @_ec("insertHTML", false, wrappedHtml)
+      $wrap = @rootNode.querySelector("#tmp-html-insertion-wrap")
+      @select(DOMUtils.unwrapNode($wrap))
+      return @
+    else
+      @_ec("insertHTML", false, wrappedHtml)
+
   insertImage: (uri) -> @_ec("insertImage", false, uri)
   insertOrderedList: -> @_ec("insertOrderedList", false)
   insertUnorderedList: -> @_ec("insertUnorderedList", false)
@@ -92,14 +111,15 @@ class EditorAPI
   unlink: -> @_ec("unlink", false)
   styleWithCSS: (style) -> @_ec("styleWithCSS", false, style)
 
-  normalize: -> @rootNode.normalize(); @
-
   contentReadOnly: -> @_notImplemented()
   enableInlineTableEditing: -> @_notImplemented()
   enableObjectResizing: -> @_notImplemented()
   insertBrOnReturn: -> @_notImplemented()
   useCSS: -> @_notImplemented()
 
+  ########################################################################
+  ####################### Private Helper Methods #########################
+  ########################################################################
   _ec: (args...) -> document.execCommand(args...); return @
   _notImplemented: -> throw new Error("Not implemented")
 
