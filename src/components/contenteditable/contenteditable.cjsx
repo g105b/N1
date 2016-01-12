@@ -3,7 +3,7 @@ React = require 'react'
 
 {Utils, DOMUtils} = require 'nylas-exports'
 {KeyCommandsRegion} = require 'nylas-component-kit'
-FloatingToolbarContainer = require './floating-toolbar-container'
+FloatingToolbar = require './floating-toolbar'
 
 EditorAPI = require './editor-api'
 ExtendedSelection = require './extended-selection'
@@ -13,6 +13,7 @@ LinkManager = require './link-manager'
 ListManager = require './list-manager'
 MouseService = require './mouse-service'
 DOMNormalizer = require './dom-normalizer'
+BasicFormatting = require './basic-formatting'
 ClipboardService = require './clipboard-service'
 BlockquoteManager = require './blockquote-manager'
 
@@ -68,6 +69,7 @@ class Contenteditable extends React.Component
     DOMNormalizer
     ListManager
     TabManager
+    BasicFormatting
     LinkManager
     BlockquoteManager
   ]
@@ -136,9 +138,7 @@ class Contenteditable extends React.Component
     @_refreshServices()
     @_mutationObserver.disconnect()
     @_mutationObserver.observe(@_editableNode(), @_mutationConfig())
-    @setInnerState
-      links: @_editableNode().querySelectorAll("*[href]")
-      editableNode: @_editableNode()
+    @setInnerState editableNode: @_editableNode()
 
   componentWillUnmount: =>
     @_mutationObserver.disconnect()
@@ -182,8 +182,10 @@ class Contenteditable extends React.Component
 
   _renderFloatingToolbar: ->
     return unless @props.floatingToolbar
-    <FloatingToolbarContainer
-        ref="toolbarController" atomicEdit={@atomicEdit} />
+    <FloatingToolbar
+        ref="toolbarController"
+        extensions={@_extensions()}
+        atomicEdit={@atomicEdit} />
 
   _editableNode: =>
     React.findDOMNode(@refs.contenteditable)
@@ -209,7 +211,7 @@ class Contenteditable extends React.Component
   # keyCommandHandlers callbacks.
   _boundExtensionKeymapHandlers: ->
     extensionHandlers = {}
-    for extension in @props.extensions.concat(@coreExtensions)
+    for extension in @_extensions()
       continue unless _.isFunction(extension.keyCommandHandlers)
       extensionHandlers = extension.keyCommandHandlers.call(extension)
       for command, handler of extensionHandlers
@@ -341,8 +343,11 @@ class Contenteditable extends React.Component
   ############################ Extensions ##############################
   ######################################################################
 
+  _extensions: ->
+    @props.extensions.concat(@coreExtensions)
+
   _runCallbackOnExtensions: (method, argsObj={}) =>
-    for extension in @props.extensions.concat(@coreExtensions)
+    for extension in @_extensions()
       @_runExtensionMethod(extension, method, argsObj)
 
   # Will execute the event handlers on each of the registerd and core

@@ -1,243 +1,320 @@
 _ = require 'underscore'
-React = require 'react/addons'
 classNames = require 'classnames'
-{CompositeDisposable} = require 'event-kit'
-{RetinaImg} = require 'nylas-component-kit'
-{ExtensionRegistry} = require 'nylas-exports'
+React = require 'react'
 
+{Utils, DOMUtils, ExtensionRegistry} = require 'nylas-exports'
+
+ToolbarButtons = require './toolbar-buttons'
+
+# Positions and renders a FloatingToolbar in the composer.
+#
+# By default, it will display the {ToolbarButtons} component.
+#
+# If a {ContenteditableExtension} implements `toolbarComponent`, and the
+# appropriate declarative conditions are met, then that component will be
+# displayed instead.
 class FloatingToolbar extends React.Component
-  @displayName = "FloatingToolbar"
+  @displayName: "FloatingToolbar"
 
   @propTypes:
-    # Absolute position in px relative to parent <Contenteditable />
-    top: React.PropTypes.number
+    # We are passed in the Contenteditable's `atomicEdit` mutator
+    # function. This is the safe way to request updates in the
+    # contenteditable. It will pass the editable DOM node and the
+    # exportedSelection object plus any extra args (like DOM event
+    # objects) to the callback
+    atomicEdit: React.PropTypes.func
 
-    # Absolute position in px relative to parent <Contenteditable />
-    left: React.PropTypes.number
-
-    # Either "above" or "below". Used when determining which CSS to use
-    pos: React.PropTypes.string
-
-    # Either "edit-link" or "buttons". Determines whether we're showing
-    # edit buttons or the link editor
-    mode: React.PropTypes.string
-
-    # The current display state of the toolbar
-    visible: React.PropTypes.bool
-
-    # A callback function we use to save the URL to the Contenteditable
-    onSaveUrl: React.PropTypes.func
-
-    # A callback so our parent can decide whether or not to hide when the
-    # mouse has moved over the component
-    onMouseEnter: React.PropTypes.func
-    onMouseLeave: React.PropTypes.func
-
-    # The current DOM link we are modifying
-    linkToModify: React.PropTypes.object
-
-    # Declares what buttons should appear in the toolbar. An array of
-    # config objects.
-    buttonConfigs: React.PropTypes.array
-
-    # The absolute available area we have used in calculating our
-    # appropriate position.
-    editAreaWidth: React.PropTypes.number
-
-    # The absolute available padding we have used in calculating our
-    # appropriate position.
-    contentPadding: React.PropTypes.number
-
-    # A callback used when a link has been cancled, completed, or escaped
-    # from. Used to notify our parent to switch modes.
-    onDoneWithLink: React.PropTypes.func
+    # We are passed an array of Extensions. Those that implement the
+    # `toolbarButton` and/or the `toolbarComponent` methods will be
+    # injected into the Toolbar.
+    extensions: React.PropTypes.array
 
   @defaultProps:
-    mode: "buttons"
-    onMouseEnter: ->
-    onMouseLeave: ->
-    buttonConfigs: []
+    extensions: []
+
+  # Every time the `innerProps` of the `Contenteditable` change, we get
+  # passed new ones.
+  @innerPropTypes:
+    dragging: React.PropTypes.bool
+    doubleDown: React.PropTypes.bool
+    hoveringOver: React.PropTypes.object
+    editableNode: React.PropTypes.object
+    editableFocused: React.PropTypes.bool
+    exportedSelection: React.PropTypes.object
 
   constructor: (@props) ->
     @state =
-      urlInputValue: @_initialUrl() ? ""
-      componentWidth: 0
+      toolbarTop: 0
+      toolbarMode: "buttons"
+      toolbarLeft: 0
+      toolbarPos: "above"
+      editAreaWidth: 9999 # This will get set on first exportedSelection
+      toolbarVisible: false
+    @innerProps =
+      dragging: false
+      doubleDown: false
+      hoveringOver: null
+      editableNode: null
+      editableFocused: null
+      exportedSelection: null
 
-  componentDidMount: =>
-    @subscriptions = new CompositeDisposable()
+  shouldComponentUpdate: (nextProps, nextState) ->
+    not Utils.isEqualReact(nextProps, @props) or
+    not Utils.isEqualReact(nextState, @state)
+
+  # Some properties (like whether we're dragging or clicking the mouse)
+  # should in a strict-sense be props, but update in a way that's not
+  # performant to got through the full React re-rendering cycle,
+  # especially given the complexity of the composer component.
+  #
+  # We call these performance-optimized props & state innerProps and
+  # innerState.
+  componentWillReceiveInnerProps: (nextInnerProps={}) =>
+    fullProps = _.extend(@props, nextInnerProps)
+    @innerProps = _.extend @innerProps, nextInnerProps
+    @setState(@_getStateFromProps(fullProps))
 
   componentWillReceiveProps: (nextProps) =>
-    @setState
-      urlInputValue: @_initialUrl(nextProps)
+    fullProps = _.extend(@innerProps, nextProps)
+    @setState(@_getStateFromProps(fullProps))
 
-  componentWillUnmount: =>
-    @subscriptions?.dispose()
+  # The context menu, when activated, needs to make sure that the toolbar
+  # is closed. Unfortunately, since there's no onClose callback for the
+  # context menu, we can't hook up a reliable declarative state to the
+  # menu. We break our declarative pattern in this one case.
+  forceClose: ->
+    @setState toolbarVisible: false
 
-  componentDidUpdate: =>
-    if @props.mode is "edit-link" and not @props.linkToModify
-      React.findDOMNode(@refs.urlInput).focus()
+  _combinedState: ->
+    return _.extend {}, @state, @props, @innerProps
 
-  render: =>
-    <div ref="floatingToolbar"
-         className={@_toolbarClasses()} style={@_toolbarStyles()}>
-      <div className="toolbar-pointer" style={@_toolbarPointerStyles()}></div>
-      {@_toolbarType()}
+  render: ->
+    <div className="floating-toolbar-container">
+      <div ref="floatingToolbar"
+           className={@_toolbarClasses()}
+           style={@_toolbarStyles()}>
+        <div className="toolbar-pointer"
+             style={@_toolbarPointerStyles()}></div>
+        {@_renderFloatingComponent()}
+      </div>
     </div>
+
+  # Defaults to `ToolbarButtons`
+  _renderFloatingComponent: ->
+    Component = ToolbarButtons
+
+    defaultProps = {extensions: @props.extensions}
+    extensionProps = {}
+
+    for extension in @props.extensions
+      params = extension.toolbarComponent?(@_combinedState()) ? {}
+      if params.component
+        Component = params.component
+        extensionProps = params.props ? {}
+
+    props = _.extend(defaultProps, extensionProps)
+    <Component {...props} />
+
+  # We want the toolbar's state to be declaratively defined from other
+  # states.
+  _getStateFromProps: (props = (_.extend({}, @props, @innerProps))) =>
+    return {} if @_mouseInUse(props)
+
+    newState = {
+      toolbarMode: @_toolbarMode(props)
+      linkToModify: props.hoveringOver
+      toolbarVisible: @_toolbarVisible(props)
+    }
+
+    if newState.toolbarVisible
+      _.extend(newState, @_getPositionData(props))
+
+    return newState
+
+  _toolbarVisible: (props) ->
+    if @_focusedInToolbar()
+      return true
+    else
+      if props.exportedSelection.isCollapsed
+        return @_isInteractingWithLink(props)
+      else
+        return true
+
+  _isInteractingWithLink: (props) ->
+    return props.hoveringOver or @_isSelectingLink(props)
+
+  _toolbarMode: (props) ->
+    if @_isInteractingWithLink(props) then "edit-link" else "buttons"
+
+  _isSelectingLink: (props) ->
+    anode = props.exportedSelection.anchorNode
+    fnode = props.exportedSelection.focusNode
+
+    testForATag = ->
+      DOMUtils.closest(anode, 'a') and DOMUtils.closest(fnode, 'a')
+
+    testForCustomTag = ->
+      tag = "n1-prompt-link"
+      DOMUtils.closest(anode, tag) and DOMUtils.closest(fnode, tag)
+
+    return testForATag() or testForCustomTag()
+
+  _focusedInToolbar: =>
+    React.findDOMNode(@)?.contains(document.activeElement)
+
+  _mouseInUse: ->
+    props.dragging or (props.doubleDown and not @state.toolbarVisible)
+
+  CONTENT_PADDING: 15
+
+  _getPositionData: (props) =>
+    editableNode = props.editableNode
+
+    if props.hoveringOver
+      referenceRect = props.hoveringOver.getBoundingClientRect()
+    else
+      referenceRect = DOMUtils.getRangeInScope(editableNode)?.getBoundingClientRect()
+
+    if not editableNode or not referenceRect or DOMUtils.isEmptyBoundingRect(referenceRect)
+      return {toolbarTop: 0, toolbarLeft: 0, editAreaWidth: 0, toolbarPos: 'above'}
+
+    TOP_PADDING = 10
+
+    BORDER_RADIUS_PADDING = 15
+
+    editArea = editableNode.getBoundingClientRect()
+
+    calcLeft = (referenceRect.left - editArea.left) + referenceRect.width/2
+    calcLeft = Math.min(Math.max(calcLeft, @CONTENT_PADDING+BORDER_RADIUS_PADDING), editArea.width - BORDER_RADIUS_PADDING)
+
+    calcTop = referenceRect.top - editArea.top - 48
+    toolbarPos = "above"
+    if calcTop < TOP_PADDING
+      calcTop = referenceRect.top - editArea.top + referenceRect.height + TOP_PADDING + 4
+      toolbarPos = "below"
+
+    return {
+      toolbarTop: calcTop
+      toolbarLeft: calcLeft
+      editAreaWidth: editArea.width
+      toolbarPos: toolbarPos
+    }
 
   _toolbarClasses: =>
     classes = {}
-    classes[@props.pos] = true
+    classes[@state.toolbarPos] = true
     classNames _.extend classes,
       "floating-toolbar": true
       "toolbar": true
-      "toolbar-visible": @props.visible
+      "toolbar-visible": @state.toolbarVisible
 
   _toolbarStyles: =>
     styles =
       left: @_toolbarLeft()
-      top: @props.top
-      width: @_width()
+      top: @state.toolbarTop
+      width: @_toolbarWidth()
     return styles
 
-  _toolbarType: =>
-    if @props.mode is "buttons" then @_renderButtons()
-    else if @props.mode is "edit-link" then @_renderLink()
-    else return <div></div>
-
-  _renderButtons: =>
-    @props.buttonConfigs.map (config, i) ->
-      if (config.iconUrl ? "").length > 0
-        icon = <RetinaImg mode={RetinaImg.Mode.ContentIsMask}
-                          url="#{toolbarItem.iconUrl}" />
-      else icon = ""
-
-      <button className="btn toolbar-btn #{config.className ? ''}"
-              key={"btn-#{i}"}
-              onClick={config.onClick}
-              title="#{config.tooltip}">{icon}</button>
-
-  _renderLink: =>
-    removeBtn = ""
-    withRemove = ""
-    if @_initialUrl()
-      withRemove = "with-remove"
-      removeBtn = <button className="btn btn-icon"
-                          ref="removeBtn"
-                          onMouseDown={@_removeUrl}><i className="fa fa-times"></i></button>
-
-    <div className="toolbar-new-link"
-         onMouseEnter={@_onMouseEnter}
-         onMouseLeave={@_onMouseLeave}>
-      <i className="fa fa-link preview-btn-icon" onClick={@_onPreventToolbarClose}></i>
-      <input type="text"
-             ref="urlInput"
-             value={@state.urlInputValue}
-             onBlur={@_onBlur}
-             onClick={@_onPreventToolbarClose}
-             onKeyPress={@_saveUrlOnEnter}
-             onChange={@_onInputChange}
-             className="floating-toolbar-input #{withRemove}"
-             placeholder="Paste or type a link" />
-      <button className="btn btn-icon"
-              ref="saveBtn"
-              onKeyPress={@_saveUrlOnEnter}
-              onMouseDown={@_saveUrl}><i className="fa fa-check"></i></button>
-      {removeBtn}
-    </div>
-
-  _onPreventToolbarClose: (event) =>
-    event.stopPropagation()
-
-  _onMouseEnter: =>
-    @props.onMouseEnter?()
-
-  _onMouseLeave: =>
-    if @props.linkToModify and document.activeElement isnt React.findDOMNode(@refs.urlInput)
-      @props.onMouseLeave?()
-
-  _initialUrl: (props=@props) =>
-    props.linkToModify?.getAttribute?('href')
-
-  _onInputChange: (event) =>
-    @setState urlInputValue: event.target.value
-
-  _saveUrlOnEnter: (event) =>
-    if event.key is "Enter"
-      if (@state.urlInputValue ? "").trim().length > 0
-        @_saveUrl()
-      else
-        @_removeUrl()
-
-  # We signify the removal of a url with an empty string. This protects us
-  # from the case where people delete the url text and hit save. In that
-  # case we also want to remove the link.
-  _removeUrl: =>
-    @setState urlInputValue: ""
-    @props.onSaveUrl "", @props.linkToModify
-    @props.onDoneWithLink()
-
-  # Clicking the save or remove buttons will take precendent over simply
-  # bluring the field.
-  _onBlur: (event) =>
-    targets = []
-    if @refs["saveBtn"]
-      targets.push React.findDOMNode(@refs["saveBtn"])
-    if @refs["removeBtn"]
-      targets.push React.findDOMNode(@refs["removeBtn"])
-
-    if event.relatedTarget in targets
-      event.preventDefault()
-      return
-    else
-      @_saveUrl()
-
-  _saveUrl: =>
-    if (@state.urlInputValue ? "").trim().length > 0
-      @props.onSaveUrl @state.urlInputValue, @props.linkToModify
-    @props.onDoneWithLink()
-
   _toolbarLeft: =>
-    CONTENT_PADDING = @props.contentPadding ? 15
-    max = @props.editAreaWidth - @_width() - CONTENT_PADDING
-    left = Math.min(Math.max(@props.left - @_width()/2, CONTENT_PADDING), max)
+    max = @state.editAreaWidth - @_toolbarWidth() - @CONTENT_PADDING
+    left = Math.min(Math.max(@state.toolbarLeft - @_toolbarWidth()/2, @CONTENT_PADDING), max)
     return left
 
   _toolbarPointerStyles: =>
-    CONTENT_PADDING = @props.contentPadding ? 15
     POINTER_WIDTH = 6 + 2 #2px of border-radius
-    max = @props.editAreaWidth - CONTENT_PADDING
-    min = CONTENT_PADDING
-    absoluteLeft = Math.max(Math.min(@props.left, max), min)
+    max = @state.editAreaWidth - @CONTENT_PADDING
+    min = @CONTENT_PADDING
+    absoluteLeft = Math.max(Math.min(@state.toolbarLeft, max), min)
     relativeLeft = absoluteLeft - @_toolbarLeft()
 
-    left = Math.max(Math.min(relativeLeft, @_width()-POINTER_WIDTH), POINTER_WIDTH)
+    left = Math.max(Math.min(relativeLeft, @_toolbarWidth()-POINTER_WIDTH), POINTER_WIDTH)
     styles =
       left: left
     return styles
 
-  _width: =>
-    # We can't calculate the width of the floating toolbar declaratively
-    # because it hasn't been rendered yet. As such, we'll keep the width
-    # fixed to make it much eaier.
-    TOOLBAR_BUTTONS_WIDTH = 114#px
-    TOOLBAR_URL_WIDTH = 210#px
-
-    # If we have a long link, we want to make a larger text area. It's not
-    # super important to get the length exactly so let's just get within
-    # the ballpark by guessing charcter lengths
-    WIDTH_PER_CHAR = 11
-    max = @props.editAreaWidth - (@props.contentPadding ? 15)*2
-
-    if @props.mode is "buttons"
-      return TOOLBAR_BUTTONS_WIDTH
-    else if @props.mode is "edit-link"
-      url = @_initialUrl()
-      if url?.length > 0
-        fullWidth = Math.max(Math.min(url.length * WIDTH_PER_CHAR, max), TOOLBAR_URL_WIDTH)
-        return fullWidth
-      else
-        return TOOLBAR_URL_WIDTH
-    else
-      return TOOLBAR_BUTTONS_WIDTH
+  ## TODO We need to determine the width somehow.
+  _toolbarWidth: =>
+    return 150
+    # # We can't calculate the width of the floating toolbar declaratively
+    # # because it hasn't been rendered yet. As such, we'll keep the width
+    # # fixed to make it much eaier.
+    # TOOLBAR_BUTTONS_WIDTH = 114#px
+    # TOOLBAR_URL_WIDTH = 210#px
+    #
+    # # If we have a long link, we want to make a larger text area. It's not
+    # # super important to get the length exactly so let's just get within
+    # # the ballpark by guessing charcter lengths
+    # WIDTH_PER_CHAR = 11
+    # max = @state.editAreaWidth - @CONTENT_PADDING*2
+    #
+    # if @state.toolbarMode is "buttons"
+    #   return TOOLBAR_BUTTONS_WIDTH
+    # else if @state.toolbarMode is "edit-link"
+    #   url = @_initialUrl()
+    #   if url?.length > 0
+    #     fullWidth = Math.max(Math.min(url.length * WIDTH_PER_CHAR, max), TOOLBAR_URL_WIDTH)
+    #     return fullWidth
+    #   else
+    #     return TOOLBAR_URL_WIDTH
+    # else
+    #   return TOOLBAR_BUTTONS_WIDTH
 
 module.exports = FloatingToolbar
+
+  # We setup the buttons that the Toolbar should have as a combination of
+  # core actions and user-defined plugins. The ToolbarButtons simply
+  # renders them.
+  # _toolbarButtonConfigs: ->
+  #   # atomicEditWrap = (command) =>
+  #   #   (event) =>
+  #   #     @props.atomicEdit((({editor}) -> editor[command]()), event)
+  #   #
+  #   extensionButtonConfigs = []
+  #   ExtensionRegistry.Composer.extensions().forEach (ext) ->
+  #     config = ext.composerToolbar?()
+  #     extensionButtonConfigs.push(config) if config?
+  #
+  #   return [
+  #     # {
+  #     #   className: "btn-bold"
+  #     #   onClick: atomicEditWrap("bold")
+  #     #   tooltip: "Bold"
+  #     #   iconUrl: null # Defined in the css of btn-bold
+  #     # }
+  #     # {
+  #     #   className: "btn-italic"
+  #     #   onClick: atomicEditWrap("italic")
+  #     #   tooltip: "Italic"
+  #     #   iconUrl: null # Defined in the css of btn-italic
+  #     # }
+  #     # {
+  #     #   className: "btn-underline"
+  #     #   onClick: atomicEditWrap("underline")
+  #     #   tooltip: "Underline"
+  #     #   iconUrl: null # Defined in the css of btn-underline
+  #     # }
+  #     # {
+  #     #   className: "btn-link"
+  #     #   onClick: => @setState toolbarMode: "edit-link"
+  #     #   tooltip: "Edit Link"
+  #     #   iconUrl: null # Defined in the css of btn-link
+  #     # }
+  #   ].concat(extensionButtonConfigs)
+
+
+    # <ToolbarButtons
+    #   ref="floatingToolbar"
+    #   top={@state.toolbarTop}
+    #   left={@state.toolbarLeft}
+    #   pos={@state.toolbarPos}
+    #   visible={@state.toolbarVisible}
+    #   component={@state.toolbarComponent}
+    #   editAreaWidth={@state.editAreaWidth}
+    #   contentPadding={@CONTENT_PADDING} />
+    #
+      # buttonConfigs={@_toolbarButtonConfigs()}
+
+      # mode={@state.toolbarMode}
+      # onSaveUrl={@_onSaveUrl}
+      # onChangeMode={@_onChangeMode}
+      # linkToModify={@state.linkToModify}
