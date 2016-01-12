@@ -2,7 +2,7 @@
 
 class BlockquoteManager extends ContenteditableExtension
   @keyCommandHandlers: ->
-    "contenteditable:insert-quote": @_onInsertQuote
+    "contenteditable:quote": @_onCreateBlockquote
 
   @onKeyDown: ({editor, event}) ->
     if event.key is "Backspace"
@@ -10,7 +10,8 @@ class BlockquoteManager extends ContenteditableExtension
         editor.outdent()
         event.preventDefault()
 
-  @_onInsertQuote: ({editor, event}) ->
+  @_onCreateBlockquote: ({editor, event}) ->
+    editor.formatBlock("BLOCKQUOTE")
 
   @_isInBlockquote: (editor) ->
     sel = editor.currentSelection()

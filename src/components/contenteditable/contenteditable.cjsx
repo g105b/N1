@@ -13,9 +13,10 @@ LinkManager = require './link-manager'
 ListManager = require './list-manager'
 MouseService = require './mouse-service'
 DOMNormalizer = require './dom-normalizer'
-BasicFormatting = require './basic-formatting'
 ClipboardService = require './clipboard-service'
 BlockquoteManager = require './blockquote-manager'
+EmphasisFormatting = require './emphasis-formatting'
+ParagraphFormatting = require './paragraph-formatting'
 
 ###
 Public: A modern React-compatible contenteditable
@@ -69,7 +70,8 @@ class Contenteditable extends React.Component
     DOMNormalizer
     ListManager
     TabManager
-    BasicFormatting
+    EmphasisFormatting
+    ParagraphFormatting
     LinkManager
     BlockquoteManager
   ]
@@ -198,6 +200,8 @@ class Contenteditable extends React.Component
   _eventHandlers: =>
     handlers = {}
     _.extend(handlers, service.eventHandlers()) for service in @_services
+
+    # NOTE: See {MouseService} for more handlers
     handlers = _.extend handlers,
       onBlur: @_onBlur
       onFocus: @_onFocus
@@ -219,23 +223,12 @@ class Contenteditable extends React.Component
           @atomicEdit(handler, {event})
     return extensionHandlers
 
+  # NOTE: Keymaps are now broken apart into individual extensions. See the
+  # `EmphasisFormatting`, `ParagraphFormatting`, `ListManager`, and
+  # `LinkManager` for examples of extensions listening to keymaps.
   _keymapHandlers: ->
-    atomicEditWrap = (command) =>
-      (event) =>
-        handler = ({editor}) -> editor[command]()
-        @atomicEdit(hander, {event})
-
-    keymapHandlers = _.extend {}, @_boundExtensionKeymapHandlers(), {
-      'contenteditable:bold': atomicEditWrap("bold")
-      'contenteditable:italic': atomicEditWrap("italic")
-      'contenteditable:indent': atomicEditWrap("indent")
-      'contenteditable:outdent': atomicEditWrap("outdent")
-      'contenteditable:underline': atomicEditWrap("underline")
-      'contenteditable:numbered-list': atomicEditWrap("insertOrderedList")
-      'contenteditable:bulleted-list': atomicEditWrap("insertUnorderedList")
-    }
-
-    return keymapHandlers
+    defaultKeymaps = {}
+    return _.extend(defaultKeymaps, @_boundExtensionKeymapHandlers())
 
   _setupListeners: =>
     document.addEventListener("selectionchange", @_onSelectionChange)

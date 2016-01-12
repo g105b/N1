@@ -2,7 +2,13 @@
 
 # This provides the default baisc formatting options for the
 # Contenteditable using the declarative extension API.
-class BasicFormatting extends ContenteditableExtension
+class EmphasisFormatting extends ContenteditableExtension
+  @keyCommandHandlers: =>
+    "contenteditable:bold": @_onBold
+    "contenteditable:italic": @_onItalic
+    "contenteditable:underline": @_onUnderline
+    "contenteditable:strikeThrough": @_onStrikeThrough
+
   @toolbarButtons: ({state}) => [
     {
       className: "btn-bold"
@@ -30,11 +36,17 @@ class BasicFormatting extends ContenteditableExtension
 
   @_onUnderline: ({editor, event}) -> editor.underline()
 
-  # None of the basic formatting buttons need a custom component.
+  @_onStrikeThrough: ({editor, event}) -> editor.strikeThrough()
+
+  # None of the emphasis formatting buttons need a custom component.
+  #
+  # They use the default <ToolbarButtons> component via the
+  # `toolbarButtons` extension API.
+  #
   # We can either return `null` or return the requsted object with no
   # component.
   @toolbarComponent: ({state}) =>
     component: null,
     props: {}
 
-module.exports = BasicFormatting
+module.exports = EmphasisFormatting

@@ -13,11 +13,12 @@ class LinkManager extends ContenteditableExtension
   # The onClick method will be passed ({editor, event}) when called.
   @toolbarButtons: ({state}) =>
     [{
-      className: ""
-      onClick: ""
-      tooltip: ""
-      iconUrl: ""
+      className: "btn-link"
+      onClick: => @setState toolbarMode: "edit-link"
+      tooltip: "Edit Link"
+      iconUrl: null # Defined in the css of btn-link
     }]
+
   # NOTE: This may be called VERY frequently. The toolbarProps and
   # toolbarState may update on every hover and selection change within the
   # composer area.
@@ -32,6 +33,10 @@ class LinkManager extends ContenteditableExtension
   #   props:
   # }
   @toolbarComponent: ({state}) =>
+    if @_isInteractingWithLink
+      component = LinkEditor
+    else
+      component = null
     return {component, props}
 
   @_onInsertLink: ({editor, event}) ->

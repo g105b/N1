@@ -7,7 +7,7 @@ React = require 'react/addons'
 # Extensions that implement `toolbarButtons` can get their buttons added
 # in.
 #
-# The {BasicFormatting} extension is an example of one that implements this spec.
+# The {EmphasisFormatting} extension is an example of one that implements this spec.
 class ToolbarButtons extends React.Component
   @displayName = "ToolbarButtons"
 

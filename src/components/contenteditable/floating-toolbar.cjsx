@@ -17,12 +17,12 @@ class FloatingToolbar extends React.Component
   @displayName: "FloatingToolbar"
 
   @propTypes:
-    # We are passed in the Contenteditable's `atomicEdit` mutator
-    # function. This is the safe way to request updates in the
-    # contenteditable. It will pass the editable DOM node and the
-    # exportedSelection object plus any extra args (like DOM event
-    # objects) to the callback
-    atomicEdit: React.PropTypes.func
+    # # We are passed in the Contenteditable's `atomicEdit` mutator
+    # # function. This is the safe way to request updates in the
+    # # contenteditable. It will pass the editable DOM node and the
+    # # exportedSelection object plus any extra args (like DOM event
+    # # objects) to the callback
+    # atomicEdit: React.PropTypes.func
 
     # We are passed an array of Extensions. Those that implement the
     # `toolbarButton` and/or the `toolbarComponent` methods will be
