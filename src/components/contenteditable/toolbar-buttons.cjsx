@@ -52,7 +52,7 @@ class ToolbarButtons extends React.Component
     #
     extensionButtonConfigs = []
     @props.extensions.forEach (ext) ->
-      config = ext.composerToolbar?()
+      config = ext.toolbarButtons?()
       extensionButtonConfigs.push(config) if config?
 
   _renderButtons: =>

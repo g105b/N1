@@ -22,8 +22,6 @@ class ParagraphFormatting extends ContenteditableExtension
   #
   # We can either return `null` or return the requsted object with no
   # component.
-  @toolbarComponent: ({state}) =>
-    component: null,
-    props: {}
+  @toolbarComponentData: => null
 
 module.exports = ParagraphFormatting

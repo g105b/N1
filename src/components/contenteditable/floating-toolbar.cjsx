@@ -4,36 +4,31 @@ React = require 'react'
 
 {Utils, DOMUtils, ExtensionRegistry} = require 'nylas-exports'
 
-ToolbarButtons = require './toolbar-buttons'
-
 # Positions and renders a FloatingToolbar in the composer.
 #
-# By default, it will display the {ToolbarButtons} component.
+# The FloatingToolbar declaratively chooses a Component to render. Only
+# extensions that expose a `toolbarComponentData` will be considered.
+# Whether or not there's an available component to render determines
+# whether or not the FloatingToolbar is visible.
 #
-# If a {ContenteditableExtension} implements `toolbarComponent`, and the
-# appropriate declarative conditions are met, then that component will be
-# displayed instead.
+# There's no `toolbarVisible` state. It uses the existance of a
+# ToolbarComponent to determine what to display.
+#
+# The {ToolbarButtonManager} and the {LinkManager} are `coreExtensions`
+# that declaratively register the special `<ToolbarButtons/>` component
+# and the `<LinkEditor />` component.
 class FloatingToolbar extends React.Component
   @displayName: "FloatingToolbar"
 
+  # We are passed an array of Extensions. Those that implement the
+  # `toolbarButton` and/or the `toolbarComponent` methods will be
+  # injected into the Toolbar.
+  #
+  # Every time the `innerState` of the `Contenteditable` change, we get
+  # passed the data as new `innerProps`.
   @propTypes:
-    # # We are passed in the Contenteditable's `atomicEdit` mutator
-    # # function. This is the safe way to request updates in the
-    # # contenteditable. It will pass the editable DOM node and the
-    # # exportedSelection object plus any extra args (like DOM event
-    # # objects) to the callback
-    # atomicEdit: React.PropTypes.func
-
-    # We are passed an array of Extensions. Those that implement the
-    # `toolbarButton` and/or the `toolbarComponent` methods will be
-    # injected into the Toolbar.
+    atomicEdit: React.PropTypes.func
     extensions: React.PropTypes.array
-
-  @defaultProps:
-    extensions: []
-
-  # Every time the `innerProps` of the `Contenteditable` change, we get
-  # passed new ones.
   @innerPropTypes:
     dragging: React.PropTypes.bool
     doubleDown: React.PropTypes.bool
@@ -42,6 +37,16 @@ class FloatingToolbar extends React.Component
     editableFocused: React.PropTypes.bool
     exportedSelection: React.PropTypes.object
 
+  @defaultProps:
+    extensions: []
+  @defaultInnerProps:
+    dragging: false
+    doubleDown: false
+    hoveringOver: null
+    editableNode: null
+    editableFocused: null
+    exportedSelection: null
+
   constructor: (@props) ->
     @state =
       toolbarTop: 0
@@ -49,14 +54,12 @@ class FloatingToolbar extends React.Component
       toolbarLeft: 0
       toolbarPos: "above"
       editAreaWidth: 9999 # This will get set on first exportedSelection
-      toolbarVisible: false
-    @innerProps =
-      dragging: false
-      doubleDown: false
-      hoveringOver: null
-      editableNode: null
-      editableFocused: null
-      exportedSelection: null
+      toolbarWidth: 0
+      toolbarButtons: []
+      toolbarComponent: null
+      toolbarLocationRef: null
+      toolbarComponentProps: {}
+    @innerProps = FloatingToolbar.defaultInnerProps
 
   shouldComponentUpdate: (nextProps, nextState) ->
     not Utils.isEqualReact(nextProps, @props) or
@@ -85,95 +88,102 @@ class FloatingToolbar extends React.Component
   forceClose: ->
     @setState toolbarVisible: false
 
-  _combinedState: ->
-    return _.extend {}, @state, @props, @innerProps
-
+  # We render a ToolbarComponent in a floating frame.
   render: ->
+    ToolbarComponent = @state.toolbarComponent
+    return false unless ToolbarComponent
+
     <div className="floating-toolbar-container">
       <div ref="floatingToolbar"
            className={@_toolbarClasses()}
            style={@_toolbarStyles()}>
         <div className="toolbar-pointer"
              style={@_toolbarPointerStyles()}></div>
-        {@_renderFloatingComponent()}
+        <ToolbarComponent {...@state.toolbarComponentProps} />
       </div>
     </div>
 
-  # Defaults to `ToolbarButtons`
-  _renderFloatingComponent: ->
-    Component = ToolbarButtons
+  # If this returns a `null` component, that means we don't want to show
+  # anything.
+  _getToolbarComponentData: (props) ->
+    toolbarComponent = null
 
-    defaultProps = {extensions: @props.extensions}
+    defaultProps = {extensions: props.extensions}
     extensionProps = {}
 
-    for extension in @props.extensions
-      params = extension.toolbarComponent?(@_combinedState()) ? {}
+    for extension in props.extensions
+      params = extension.toolbarComponentData?(@_combinedState()) ? {}
       if params.component
-        Component = params.component
+        toolbarComponent = params.component
         extensionProps = params.props ? {}
+        toolbarLocationRef = params.locationRef ? {}
+        toolbarWidth = params.width ? {}
 
-    props = _.extend(defaultProps, extensionProps)
-    <Component {...props} />
+    toolbarComponentProps = _.extend(defaultProps, extensionProps)
+    return {toolbarComponent, toolbarComponentProps, toolbarLocationRef, toolbarWidth}
 
-  # We want the toolbar's state to be declaratively defined from other
-  # states.
-  _getStateFromProps: (props = (_.extend({}, @props, @innerProps))) =>
-    return {} if @_mouseInUse(props)
+  _getToolbarButtons: (props) ->
+    for extension in props.extensions
 
-    newState = {
-      toolbarMode: @_toolbarMode(props)
-      linkToModify: props.hoveringOver
-      toolbarVisible: @_toolbarVisible(props)
-    }
+  _combinedState: ->
+    return _.extend {}, @state, @props, @innerProps
 
-    if newState.toolbarVisible
-      _.extend(newState, @_getPositionData(props))
+  _getStateFromProps: (props) ->
+    toolbarComponentState = @_getToolbarComponentData(props)
+    toolbarButtons = @_getToolbarButtons(props)
+    positionState = @_calculatePositionState(props)
+    return _.extend {}, positionState, toolbarComponentState, {toolbarButtons}
 
-    return newState
+  # # We want the toolbar's state to be declaratively defined from other
+  # # states.
+  # _getStateFromProps: (props = (_.extend({}, @props, @innerProps))) =>
+  #   return {} if @_mouseInUse(props)
+  #
+  #   newState = {
+  #     toolbarMode: @_toolbarMode(props)
+  #     linkToModify: props.hoveringOver
+  #     toolbarVisible: @_toolbarVisible(props)
+  #   }
+  #
+  #   if newState.toolbarVisible
+  #     _.extend(newState, @_getPositionData(props))
+  #
+  #   return newState
+  #
+  # _toolbarVisible: (props) ->
+  #   if @_focusedInToolbar()
+  #     return true
+  #   else
+  #     if props.exportedSelection.isCollapsed
+  #       return @_isInteractingWithLink(props)
+  #     else
+  #       return true
 
-  _toolbarVisible: (props) ->
-    if @_focusedInToolbar()
-      return true
-    else
-      if props.exportedSelection.isCollapsed
-        return @_isInteractingWithLink(props)
-      else
-        return true
+  # _isInteractingWithLink: (props) ->
+  #   return props.hoveringOver or @_isSelectingLink(props)
+  #
+  # _toolbarMode: (props) ->
+  #   if @_isInteractingWithLink(props) then "edit-link" else "buttons"
 
-  _isInteractingWithLink: (props) ->
-    return props.hoveringOver or @_isSelectingLink(props)
-
-  _toolbarMode: (props) ->
-    if @_isInteractingWithLink(props) then "edit-link" else "buttons"
-
-  _isSelectingLink: (props) ->
-    anode = props.exportedSelection.anchorNode
-    fnode = props.exportedSelection.focusNode
-
-    testForATag = ->
-      DOMUtils.closest(anode, 'a') and DOMUtils.closest(fnode, 'a')
-
-    testForCustomTag = ->
-      tag = "n1-prompt-link"
-      DOMUtils.closest(anode, tag) and DOMUtils.closest(fnode, tag)
-
-    return testForATag() or testForCustomTag()
-
-  _focusedInToolbar: =>
-    React.findDOMNode(@)?.contains(document.activeElement)
-
-  _mouseInUse: ->
-    props.dragging or (props.doubleDown and not @state.toolbarVisible)
+  # _isSelectingLink: (props) ->
+  #   anode = props.exportedSelection.anchorNode
+  #   fnode = props.exportedSelection.focusNode
+  #
+  #   testForATag = ->
+  #     DOMUtils.closest(anode, 'a') and DOMUtils.closest(fnode, 'a')
+  #
+  #   testForCustomTag = ->
+  #     tag = "n1-prompt-link"
+  #     DOMUtils.closest(anode, tag) and DOMUtils.closest(fnode, tag)
+  #
+  #   return testForATag() or testForCustomTag()
 
   CONTENT_PADDING: 15
 
-  _getPositionData: (props) =>
+  _calculatePositionState: (props) =>
     editableNode = props.editableNode
 
-    if props.hoveringOver
-      referenceRect = props.hoveringOver.getBoundingClientRect()
-    else
-      referenceRect = DOMUtils.getRangeInScope(editableNode)?.getBoundingClientRect()
+    referenceRect = @state.toolbarLocationRef.getBoundingClientRect()
 
     if not editableNode or not referenceRect or DOMUtils.isEmptyBoundingRect(referenceRect)
       return {toolbarTop: 0, toolbarLeft: 0, editAreaWidth: 0, toolbarPos: 'above'}
@@ -206,18 +216,17 @@ class FloatingToolbar extends React.Component
     classNames _.extend classes,
       "floating-toolbar": true
       "toolbar": true
-      "toolbar-visible": @state.toolbarVisible
 
   _toolbarStyles: =>
     styles =
       left: @_toolbarLeft()
       top: @state.toolbarTop
-      width: @_toolbarWidth()
+      width: @state.toolbarWidth
     return styles
 
   _toolbarLeft: =>
-    max = @state.editAreaWidth - @_toolbarWidth() - @CONTENT_PADDING
-    left = Math.min(Math.max(@state.toolbarLeft - @_toolbarWidth()/2, @CONTENT_PADDING), max)
+    max = @state.editAreaWidth - @state.toolbarWidth - @CONTENT_PADDING
+    left = Math.min(Math.max(@state.toolbarLeft - @state.toolbarWidth/2, @CONTENT_PADDING), max)
     return left
 
   _toolbarPointerStyles: =>
@@ -227,7 +236,7 @@ class FloatingToolbar extends React.Component
     absoluteLeft = Math.max(Math.min(@state.toolbarLeft, max), min)
     relativeLeft = absoluteLeft - @_toolbarLeft()
 
-    left = Math.max(Math.min(relativeLeft, @_toolbarWidth()-POINTER_WIDTH), POINTER_WIDTH)
+    left = Math.max(Math.min(relativeLeft, @state.toolbarWidth-POINTER_WIDTH), POINTER_WIDTH)
     styles =
       left: left
     return styles

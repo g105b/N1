@@ -1,43 +1,48 @@
-{ContenteditableExtension} = require 'nylas-exports'
+{DOMUtils, ContenteditableExtension} = require 'nylas-exports'
 LinkEditor = require './link-editor'
 
 class LinkManager extends ContenteditableExtension
   @keyCommandHandlers: =>
     "contenteditable:insert-link": @_onInsertLink
 
-  # NOTE: This may be called VERY frequently. The toolbarProps and
-  # toolbarState may update on every hover and selection change within the
-  # composer area.
-  #
-  # Must return an object with the form:
-  # The onClick method will be passed ({editor, event}) when called.
-  @toolbarButtons: ({state}) =>
+  @toolbarButtons: ({toolbarState}) =>
     [{
       className: "btn-link"
-      onClick: => @setState toolbarMode: "edit-link"
+      onClick: @_onInsertLink
       tooltip: "Edit Link"
       iconUrl: null # Defined in the css of btn-link
     }]
 
-  # NOTE: This may be called VERY frequently. The toolbarProps and
-  # toolbarState may update on every hover and selection change within the
-  # composer area.
-  #
-  # Return a compoennt and the props for that component to put in the
-  # toolbar.
-  #
-  # Must return an object with the form:
-  #
-  # {
-  #   component:
-  #   props:
-  # }
-  @toolbarComponent: ({state}) =>
-    if @_isInteractingWithLink
-      component = LinkEditor
-    else
-      component = null
-    return {component, props}
+  @toolbarComponentData: ({toolbarState}) =>
+    return null if toolbarState.dragging or toolbarState.doubleDown
+    linkHoveringOver = DOMUtils.closest(toolbarState.hoveringOver, 'a')
+    if @_isInteractingWithLink(linkHoveringOver, toolbarState)
+      return {
+        component: LinkEditor
+        props:
+          onSaveUrl: @_onSaveUrl
+          onDoneWithLink: @_onDoneWithLink
+          linkToModify: linkHoveringOver
+        locationRef: null
+        width: 100
+      }
+    else return null
+
+  @_isInteractingWithLink: (linkHoveringOver, toolbarState) ->
+    return linkHoveringOver or @_isSelectingLink(toolbarState)
+
+  @_isSelectingLink: (toolbarState) ->
+    anode = toolbarState.exportedSelection.anchorNode
+    fnode = toolbarState.exportedSelection.focusNode
+
+    testForATag = ->
+      DOMUtils.closest(anode, 'a') and DOMUtils.closest(fnode, 'a')
+
+    testForCustomTag = ->
+      tag = "n1-prompt-link"
+      DOMUtils.closest(anode, tag) and DOMUtils.closest(fnode, tag)
+
+    return testForATag() or testForCustomTag()
 
   @_onInsertLink: ({editor, event}) ->
     if editor.currentSelection.isCollapsed

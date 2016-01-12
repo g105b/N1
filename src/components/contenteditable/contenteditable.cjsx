@@ -17,6 +17,7 @@ ClipboardService = require './clipboard-service'
 BlockquoteManager = require './blockquote-manager'
 EmphasisFormatting = require './emphasis-formatting'
 ParagraphFormatting = require './paragraph-formatting'
+ToolbarButtonManager = require './toolbar-button-manager'
 
 ###
 Public: A modern React-compatible contenteditable
@@ -68,6 +69,7 @@ class Contenteditable extends React.Component
 
   coreExtensions: [
     DOMNormalizer
+    ToolbarButtonManager
     ListManager
     TabManager
     EmphasisFormatting
@@ -186,8 +188,8 @@ class Contenteditable extends React.Component
     return unless @props.floatingToolbar
     <FloatingToolbar
         ref="toolbarController"
-        extensions={@_extensions()}
-        atomicEdit={@atomicEdit} />
+        atomicEdit={@atomicEdit}
+        extensions={@_extensions()} />
 
   _editableNode: =>
     React.findDOMNode(@refs.contenteditable)

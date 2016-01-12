@@ -43,10 +43,8 @@ class EmphasisFormatting extends ContenteditableExtension
   # They use the default <ToolbarButtons> component via the
   # `toolbarButtons` extension API.
   #
-  # We can either return `null` or return the requsted object with no
-  # component.
-  @toolbarComponent: ({state}) =>
-    component: null,
-    props: {}
+  # The <ToolbarButtons> core component is managed by the
+  # {ToolbarButtonManager}
+  @toolbarComponentData: => null
 
 module.exports = EmphasisFormatting
