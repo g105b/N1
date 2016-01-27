@@ -46,10 +46,10 @@ class LaunchSystemStartItem extends React.Component
   _toggleLaunchOnStart: (event) =>
     if @state.launchOnStart is true
       @setState(launchOnStart: false)
-      @_services.launchOnSystemStart()
+      @_services.dontLaunchOnSystemStart()
     else
       @setState(launchOnStart: true)
-      @_services.dontLaunchOnSystemStart()
+      @_services.launchOnSystemStart()
     event.target.blur()
 
 class AppearanceModeSwitch extends React.Component

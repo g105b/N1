@@ -1,6 +1,5 @@
 import path from 'path'
 import fs from 'fs'
-import ws from 'windows-shortcuts'
 
 class SystemStartServiceBase {
   available() {
@@ -65,6 +64,7 @@ class SystemStartServiceWin32 extends SystemStartServiceBase {
   launchOnSystemStart() {
     const updatePath = path.join(process.env.LOCALAPPDATA, "nylas",
                                  "Update.exe");
+    const ws = require('windows-shortcuts')
     ws.create(this.shortcutPath(), `${updatePath} --processStart nylas.exe`);
   }
 
