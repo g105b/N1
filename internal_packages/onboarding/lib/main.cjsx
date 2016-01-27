@@ -1,5 +1,5 @@
 PageRouter = require "./page-router"
-{WorkspaceStore, ComponentRegistry} = require 'nylas-exports'
+{SystemStartService, WorkspaceStore, ComponentRegistry} = require 'nylas-exports'
 
 module.exports =
   item: null
@@ -13,3 +13,8 @@ module.exports =
 
     ComponentRegistry.register PageRouter,
       location: WorkspaceStore.Location.Center
+
+    startService = new SystemStartService()
+    if startService.available()
+      startService.doesLaunchOnSystemStart (err) =>
+        startService.launchOnSystemStart() if err?
