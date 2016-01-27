@@ -3,8 +3,8 @@ import fs from 'fs'
 import {exec} from 'child_process'
 
 class SystemStartServiceBase {
-  available() {
-    return false;
+  checkAvailability() {
+    return Promise.resolve(false);
   }
 
   doesLaunchOnSystemStart() {
@@ -21,60 +21,87 @@ class SystemStartServiceBase {
 }
 
 class SystemStartServiceDarwin extends SystemStartServiceBase {
-  available() { return true; }
-
-  plistPath() {
-    return path.join(process.env.HOME, "Library",
-                     "LaunchAgents", "com.nylas.plist");
+  checkAvailability() {
+    return new Promise((resolve) => {
+      fs.access(this._launcherPath(), fs.R_OK | fs.W_OK, (err) => {
+        if (err) { resolve(false) } else { resolve(true) }
+      });
+    });
   }
 
-  launchdPlist() {
-    return {
-      "Label": "com.nylas.n1",
-      "Program": "/Applications/Nylas N1.app/Contents/MacOS/Nylas",
-      "ProgramArguments": [],
-      "RunAtLoad": true,
-    }
-  }
-
-  doesLaunchOnSystemStart(callback) {
-    return fs.access(this.plistPath(), fs.R_OK | fs.W_OK, callback)
+  doesLaunchOnSystemStart() {
+    return new Promise((resolve) => {
+      fs.access(this._plistPath(), fs.R_OK | fs.W_OK, (err) => {
+        if (err) { resolve(false) } else { resolve(true) }
+      });
+    });
   }
 
   launchOnSystemStart() {
-    fs.writeFile(this.plistPath(), JSON.stringify(this.launchdPlist()), (err) => {
+    fs.writeFile(this._plistPath(), JSON.stringify(this._launchdPlist()), (err) => {
       if (!err) {
-        exec(`plutil -convert xml1 ${this.plistPath()}`)
+        exec(`plutil -convert xml1 ${this._plistPath()}`)
       }
     })
   }
 
   dontLaunchOnSystemStart() {
-    return fs.unlink(this.plistPath())
+    return fs.unlink(this._plistPath())
+  }
+
+  _launcherPath() {
+    return path.join("/", "Applications", "Nylas N1.app", "Contents",
+                     "MacOS", "Nylas")
+  }
+
+  _plistPath() {
+    return path.join(process.env.HOME, "Library",
+                     "LaunchAgents", "com.nylas.plist");
+  }
+
+  _launchdPlist() {
+    return {
+      "Label": "com.nylas.n1",
+      "Program": this._launcherPath(),
+      "ProgramArguments": [],
+      "RunAtLoad": true,
+    }
   }
 }
 
 class SystemStartServiceWin32 extends SystemStartServiceBase {
-  available() { return true; }
-
-  shortcutPath() {
-    return path.join(process.env.APPDATA, "Microsoft", "Windows",
-                     "Start Menu", "Programs", "Startup", "Nylas.lnk")
+  checkAvailability() {
+    return new Promise((resolve) => {
+      fs.access(this._launcherPath(), fs.R_OK | fs.W_OK, (err) => {
+        if (err) { resolve(false) } else { resolve(true) }
+      });
+    });
   }
 
-  doesLaunchOnSystemStart(callback) {
-    return fs.access(this.shortcutPath(), fs.R_OK | fs.W_OK, callback)
+  doesLaunchOnSystemStart() {
+    return new Promise((resolve) => {
+      fs.access(this._shortcutPath(), fs.R_OK | fs.W_OK, (err) => {
+        if (err) { resolve(false) } else { resolve(true) }
+      });
+    });
   }
 
   launchOnSystemStart() {
-    const updatePath = path.join(process.env.LOCALAPPDATA, "nylas",
-                                 "Update.exe");
-    const ws = require('windows-shortcuts')
-    ws.create(this.shortcutPath(), `${updatePath} --processStart nylas.exe`);
+    const target = `${this._launcherPath()} --processStart nylas.exe`
+    exec(`SHORTCUT -f -t "${target}" -n "${this._shortcutPath()}"`)
   }
 
   dontLaunchOnSystemStart() {
-    return fs.unlink(this.shortcutPath())
+    return fs.unlink(this._shortcutPath())
+  }
+
+  _launcherPath() {
+    return path.join(process.env.LOCALAPPDATA, "nylas", "Update.exe")
+  }
+
+  _shortcutPath() {
+    return path.join(process.env.APPDATA, "Microsoft", "Windows",
+                     "Start Menu", "Programs", "Startup", "Nylas.lnk")
   }
 }
 

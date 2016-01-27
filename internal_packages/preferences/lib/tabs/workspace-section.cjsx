@@ -29,15 +29,21 @@ class DefaultMailClientItem extends React.Component
 
 class LaunchSystemStartItem extends React.Component
   constructor: (@props) ->
-    @state = {}
-    @_services = new SystemStartService()
-    if @_services.available()
-      @_services.doesLaunchOnSystemStart (err) =>
-        launchOnStart = not err?
+    @state = {
+      available: false
+      launchOnStart: false
+    }
+    @_service = new SystemStartService()
+
+  componentDidMount: ->
+    @_service.checkAvailability().then (available) =>
+      @setState {available}
+      return if not available
+      @_service.doesLaunchOnSystemStart().then (launchOnStart) =>
         @setState({launchOnStart})
 
   render: =>
-    return false unless process.platform is 'darwin'
+    return false if not @state.available
     <div className="item">
       <input type="checkbox" id="launch-on-start" checked={@state.launchOnStart} onChange={@_toggleLaunchOnStart}/>
       <label htmlFor="launch-on-start">Launch on system start</label>
@@ -46,10 +52,10 @@ class LaunchSystemStartItem extends React.Component
   _toggleLaunchOnStart: (event) =>
     if @state.launchOnStart is true
       @setState(launchOnStart: false)
-      @_services.dontLaunchOnSystemStart()
+      @_service.dontLaunchOnSystemStart()
     else
       @setState(launchOnStart: true)
-      @_services.launchOnSystemStart()
+      @_service.launchOnSystemStart()
     event.target.blur()
 
 class AppearanceModeSwitch extends React.Component
