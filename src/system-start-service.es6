@@ -1,5 +1,6 @@
 import path from 'path'
 import fs from 'fs'
+import {exec} from 'child_process'
 
 class SystemStartServiceBase {
   available() {
@@ -30,8 +31,8 @@ class SystemStartServiceDarwin extends SystemStartServiceBase {
   launchdPlist() {
     return {
       "Label": "com.nylas.n1",
-      "Program": "open",
-      "ProgramArguments": ["-a", "'Nylas N1'"],
+      "Program": "/Applications/Nylas N1.app/Contents/MacOS/Nylas",
+      "ProgramArguments": [],
       "RunAtLoad": true,
     }
   }
@@ -41,7 +42,11 @@ class SystemStartServiceDarwin extends SystemStartServiceBase {
   }
 
   launchOnSystemStart() {
-    fs.writeFile(this.plistPath(), JSON.stringify(this.launchdPlist()))
+    fs.writeFile(this.plistPath(), JSON.stringify(this.launchdPlist()), (err) => {
+      if (!err) {
+        exec(`plutil -convert xml1 ${this.plistPath()}`)
+      }
+    })
   }
 
   dontLaunchOnSystemStart() {
